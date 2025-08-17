@@ -1,0 +1,138 @@
+-- john dtoe parry script yez
+
+local Players = game:GetService("Players")
+local lp = Players.LocalPlayer
+local CoreGui = game:GetService("CoreGui")
+
+-- GUI Setup (parented to CoreGui so it stays after respawn)
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "Error404Gui"
+ScreenGui.ResetOnSpawn = false  -- important: don't reset on spawn
+ScreenGui.Parent = CoreGui
+
+local Frame = Instance.new("Frame", ScreenGui)
+Frame.Size = UDim2.new(0, 200, 0, 100)
+Frame.Position = UDim2.new(0, 50, 0, 200)
+Frame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+
+Frame.Active = true
+Frame.Draggable = true
+
+local Toggle = Instance.new("TextButton", Frame)
+Toggle.Size = UDim2.new(1, -10, 0, 40)
+Toggle.Position = UDim2.new(0, 5, 0, 5)
+Toggle.Text = "Auto Error 404: OFF"
+Toggle.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+Toggle.TextColor3 = Color3.new(1, 1, 1)
+
+local RangeBox = Instance.new("TextBox", Frame)
+RangeBox.Size = UDim2.new(1, -10, 0, 30)
+RangeBox.Position = UDim2.new(0, 5, 0, 50)
+RangeBox.PlaceholderText = "Range (default 14)"
+RangeBox.Text = ""
+RangeBox.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+RangeBox.TextColor3 = Color3.new(1, 1, 1)
+
+-- Vars
+local autoErrorEnabled = false
+local detectionRange = 14
+local soundHooks = {}
+local soundTriggeredUntil = {}
+
+-- Trigger sounds
+local autoErrorTriggerSounds = {
+    ["86710781315432"] = true,
+    ["99820161736138"] = true,
+    ["609342351"] = true,
+    ["81976396729343"] = true,
+    ["12222225"] = true,
+    ["80521472651047"] = true,
+    ["139012439429121"] = true,
+    ["91194698358028"] = true,
+    ["111910850942168"] = true,
+    ["83851356262523"] = true,
+}
+
+-- Helpers
+local function extractNumericSoundId(sound)
+    if not sound or not sound.SoundId then return nil end
+    return tostring(sound.SoundId):match("%d+")
+end
+
+local function getSoundWorldPosition(sound)
+    if sound.Parent and sound.Parent:IsA("BasePart") then
+        return sound.Parent.Position
+    elseif sound.Parent and sound.Parent:IsA("Attachment") and sound.Parent.Parent:IsA("BasePart") then
+        return sound.Parent.Parent.Position
+    end
+    local found = sound.Parent and sound.Parent:FindFirstChildWhichIsA("BasePart", true)
+    if found then return found.Position end
+    return nil
+end
+
+local function attemptError404ForSound(sound)
+    if not autoErrorEnabled then return end
+    if not sound or not sound:IsA("Sound") or not sound.IsPlaying then return end
+
+    local id = extractNumericSoundId(sound)
+    if not id or not autoErrorTriggerSounds[id] then return end
+
+    local myRoot = lp.Character and lp.Character:FindFirstChild("HumanoidRootPart")
+    if not myRoot then return end
+
+    if soundTriggeredUntil[sound] and tick() < soundTriggeredUntil[sound] then return end
+
+    local pos = getSoundWorldPosition(sound)
+    local shouldTrigger = (not pos) or ((myRoot.Position - pos).Magnitude <= detectionRange)
+
+    if shouldTrigger then
+        warn("[AUTO ERROR 404] Triggered for Sound ID:", id)
+        local args = {"UseActorAbility","404Error"}
+        game:GetService("ReplicatedStorage"):WaitForChild("Modules"):WaitForChild("Network"):WaitForChild("RemoteEvent"):FireServer(unpack(args))
+        soundTriggeredUntil[sound] = tick() + 1.2
+    end
+end
+
+local function hookSound(sound)
+    if soundHooks[sound] then return end
+    local playedConn = sound.Played:Connect(function() attemptError404ForSound(sound) end)
+    local propConn = sound:GetPropertyChangedSignal("IsPlaying"):Connect(function()
+        if sound.IsPlaying then attemptError404ForSound(sound) end
+    end)
+    local destroyConn = sound.Destroying:Connect(function()
+        playedConn:Disconnect()
+        propConn:Disconnect()
+        destroyConn:Disconnect()
+        soundHooks[sound] = nil
+        soundTriggeredUntil[sound] = nil
+    end)
+    soundHooks[sound] = true
+    if sound.IsPlaying then attemptError404ForSound(sound) end
+end
+
+-- Hook existing + future sounds
+for _, s in ipairs(game:GetDescendants()) do
+    if s:IsA("Sound") then hookSound(s) end
+end
+game.DescendantAdded:Connect(function(d)
+    if d:IsA("Sound") then hookSound(d) end
+end)
+
+-- GUI Logic
+Toggle.MouseButton1Click:Connect(function()
+    autoErrorEnabled = not autoErrorEnabled
+    Toggle.Text = "Auto Error 404: " .. (autoErrorEnabled and "ON" or "OFF")
+end)
+
+RangeBox.FocusLost:Connect(function(enter)
+    if enter then
+        local val = tonumber(RangeBox.Text)
+        if val and val > 0 then
+            detectionRange = val
+            RangeBox.Text = "Range = "..val
+        else
+            detectionRange = 14
+            RangeBox.Text = "Range = 14"
+        end
+    end
+end)
